@@ -107,7 +107,8 @@ def execute_commands(cmds):
         module.fail_json(msg=traceback.format_exc())
 
 def execute_command(cmd):
-        output = subprocess.Popen(cmd, stdout=subprocess.PIPE).wait()
+        output = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+        output.wait()
         return output
 
 
