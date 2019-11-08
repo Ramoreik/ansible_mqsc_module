@@ -77,6 +77,9 @@ class queue():
         if qtype in QTYPES:
             self.qtype = qtype
     
+    def generate_mqsc(self):
+        print("Generates mqsc line based on the queue to create")
+
     def fetch_current(self):
         print("verify if queue exists and then gets mqsc output")
     
