@@ -62,6 +62,7 @@ IMPORTANT_BINARIES_LOCATION = {
 class QMGR():
     def __init__(self, name):
         self.name = name
+        self.commands_pending = []
 
     def exists(self):
         cmd = shlex.split((IMPORTANT_BINARIES_LOCATION['DSPMQ']))
@@ -69,30 +70,22 @@ class QMGR():
         result_stdout = retrieve_stdout(result)
         if self.name in result_stdout:
             return True
-        print("verifies if the qmgr exists") 
 
     def create(self):
         cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['CRTMQM'], self.name))
-        result = execute_command(cmd)
-
-        if result.returncode != 0:
-            result_stdout = retrieve_stdout(result)
-            module.fail_json(msg="Failed to create QMGR.\n%s" % result_stdout)
-        print("create the base qmgr if it doesn't exist")
+        self.commands_pending.append(cmd)
 
     def start(self):
         cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['STRMQM'], self.name))
-        result = execute_command(cmd)
-        if result.returncode != 0:
-            result_stdout = retrieve_stdout(result)
-            module.fail_json(msg="Failed to start QMGR.\n%s" % result_stdout)
+        self.commands_pending.append(cmd)
     
     def stop(self):
-        cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['ENDMQM']))
-        result = execute_command(cmd)
-        if result.returncode !=0:
-            result_stdout = result_stdout(result)
-            module.fail_json(msg="Failed to stop QMGR.")
+        cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['ENDMQM'], self.name))
+        self.commands_pending.append(cmd)
+    
+    def delete(self):
+        cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['DLTMQM'], self.name))
+        self.commands_pending.append(cmd)
 
 
 def retrieve_stdout(cmd_result):
@@ -101,6 +94,15 @@ def retrieve_stdout(cmd_result):
         stdout += line
     return stdout
 
+def execute_commands(cmds):
+    return_code = 0
+    for c in cmds:
+        p = subprocess.Popen(c, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        result = p.communicate()
+        yield result
+        return_code = p.returncode
+        if return_code != 0:
+            break
 
 def execute_command(cmd):
     try:
@@ -214,11 +216,20 @@ def run_module():
         message=''
     )
 
-    qmgr = QMGR("hello")
-    if not qmgr.exists():
-        qmgr.create()
-        qmgr.start()
-        result['changed'] = True
+    qmgr_name = module.params['qmgr']['state']
+    qmgr_state = module.params['qmgr']['name']
+    qmgr = QMGR(qmgr_name)
+    if qmgr_state == "present":
+        if not qmgr.exists():
+            qmgr.create()
+            qmgr.start()
+            result['changed'] = True
+
+    if qmgr_state == "absent":
+        if qmgr.exists():
+            qmgr.stop()
+            qmgr.delete()
+            result['changed'] = True
 
     if module.check_mode:
         module.exit_json(**result)
