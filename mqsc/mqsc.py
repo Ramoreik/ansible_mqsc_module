@@ -85,7 +85,7 @@ class QMGR():
         result = execute_command(cmd)
         if result.returncode != 0:
             result_stdout = retrieve_stdout(result)
-            module.fail_json(msg="Failed to create QMGR.\n%s" % result_stdout)
+            module.fail_json(msg="Failed to start QMGR.\n%s" % result_stdout)
     
     def stop(self):
         cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['ENDMQM']))
