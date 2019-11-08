@@ -87,6 +87,9 @@ class QMGR():
         cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['DLTMQM'], self.name))
         self.commands_pending.append(cmd)
 
+    def commit(self):
+        execute_commands(self.commands_pending)
+
 
 def retrieve_stdout(cmd_result):
     stdout = ""
@@ -216,19 +219,21 @@ def run_module():
         message=''
     )
 
-    qmgr_name = module.params['qmgr']['state']
-    qmgr_state = module.params['qmgr']['name']
+    qmgr_name = module.params['qmgr'][0]['state']
+    qmgr_state = module.params['qmgr'][0]['name']
     qmgr = QMGR(qmgr_name)
     if qmgr_state == "present":
         if not qmgr.exists():
             qmgr.create()
             qmgr.start()
+            qmgr.commit()
             result['changed'] = True
 
     if qmgr_state == "absent":
         if qmgr.exists():
             qmgr.stop()
             qmgr.delete()
+            qmgr.commit()
             result['changed'] = True
 
     if module.check_mode:
