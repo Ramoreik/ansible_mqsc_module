@@ -98,21 +98,17 @@ def retrieve_stdout(cmd_result):
     return stdout
 
 def execute_commands(cmds):
-    return_code = 0
-    for c in cmds:
-        p = subprocess.Popen(c, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        result = p.communicate()
-        yield result
-        return_code = p.returncode
-        if return_code != 0:
-            break
-
-def execute_command(cmd):
     try:
-        output = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-        return output
+        for cmd in cmds:
+            rc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE).wait()
+            if rc != 0:
+                break
     except Exception:
         module.fail_json(msg=traceback.format_exc())
+
+def execute_command(cmd):
+        output = subprocess.Popen(cmd, stdout=subprocess.PIPE).wait()
+        return output
 
 
 def validate_binaries():
@@ -219,8 +215,8 @@ def run_module():
         message=''
     )
 
-    qmgr_name = module.params['qmgr'][0]['state']
-    qmgr_state = module.params['qmgr'][0]['name']
+    qmgr_name = module.params['qmgr'][0]['name']
+    qmgr_state = module.params['qmgr'][0]['state']
     qmgr = QMGR(qmgr_name)
     if qmgr_state == "present":
         if not qmgr.exists():
