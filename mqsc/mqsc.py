@@ -53,7 +53,9 @@ IMPORTANT_BINARIES_LOCATION = {
     'CRTMQM' : '/usr/bin/crtmqm',
     'STRMQM' : '/usr/bin/strmqm',
     'DSPMQ' : '/usr/bin/dspmq',
-    'DSPMQVER' : '/usr/bin/dspmqver'
+    'DSPMQVER' : '/usr/bin/dspmqver',
+    'ENDMQM' : '/usr/bin/endmqm',
+    'DLTMQM' : '/usr/bin/dltmqm'
 }
 
 
@@ -72,6 +74,7 @@ class QMGR():
     def create(self):
         cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['CRTMQM'], self.name))
         result = execute_command(cmd)
+
         if result.returncode != 0:
             result_stdout = retrieve_stdout(result)
             module.fail_json(msg="Failed to create QMGR.\n%s" % result_stdout)
@@ -83,6 +86,13 @@ class QMGR():
         if result.returncode != 0:
             result_stdout = retrieve_stdout(result)
             module.fail_json(msg="Failed to create QMGR.\n%s" % result_stdout)
+    
+    def stop(self):
+        cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['ENDMQM']))
+        result = execute_command(cmd)
+        if result.returncode !=0:
+            result_stdout = result_stdout(result)
+            module.fail_json(msg="Failed to stop QMGR.")
 
 
 def retrieve_stdout(cmd_result):
