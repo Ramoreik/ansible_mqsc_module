@@ -11,7 +11,7 @@ DOCUMENTATION = '''
 ---
 module: mqsc
 
-short_description: Simple module to manage an IBM MQ9 installation.  
+short_description: Simple module to manage an IBM MQ9 installation.
 
 version_added: "2.9"
 
@@ -41,6 +41,7 @@ RETURN = '''
 TODO
 '''
 import os
+import re
 import shlex
 import traceback
 import subprocess
@@ -60,16 +61,30 @@ IMPORTANT_BINARIES_LOCATION = {
 
 
 class QMGR():
+    DSPMQ_REGEX = r"QMNAME\(([A-Za-z0-9]*)\) *STATUS\(([A-Za-z]*)\)"
+
     def __init__(self, name):
         self.name = name
         self.commands_pending = []
 
-    def exists(self):
-        cmd = shlex.split((IMPORTANT_BINARIES_LOCATION['DSPMQ']))
+    def parse_dspmq(self):
+        cmd = IMPORTANT_BINARIES_LOCATION['DSPMQ']
         result = execute_command(cmd)
-        result_stdout = retrieve_stdout(result)
-        if self.name in result_stdout:
-            return True
+        module.log("DSPMQ RESULTS : %s" % result)
+        matches = []
+        for line in result.stdout:
+            match = re.match(self.DSPMQ_REGEX, line)
+            if match:
+                module.log("MATCH : %s" % match)
+                matches.append(match.groups)
+        module.log("groups : %s" % matches)
+        return matches
+
+    def exists(self):
+        parsed_dspmq = self.parse_dspmq()
+        for entry in parsed_dspmq:
+            if self.name in entry:
+                return True
 
     def create(self):
         cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['CRTMQM'], self.name))
@@ -78,11 +93,11 @@ class QMGR():
     def start(self):
         cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['STRMQM'], self.name))
         self.commands_pending.append(cmd)
-    
+
     def stop(self):
         cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['ENDMQM'], self.name))
         self.commands_pending.append(cmd)
-    
+
     def delete(self):
         cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['DLTMQM'], self.name))
         self.commands_pending.append(cmd)
@@ -118,7 +133,7 @@ def validate_binaries():
         if not os.path.exists(binary_location):
             module.warn("Missing mq binary : %s, the module may fail"\
                 % binary_location)
-            
+
 
 def run_module():
 # QUEUE MQSC COMMANDS :  https://www.ibm.com/support/knowledgecenter/SSFKSJ_9.1.0/com.ibm.mq.ref.adm.doc/q085690_.htm
