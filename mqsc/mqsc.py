@@ -50,6 +50,7 @@ from ansible.module_utils.basic import AnsibleModule
 
 module = None
 
+MODULE_TEMP_FOLDER = os.path.join(os.path.sep ,'tmp', 'mqsc_ansible_temp')
 IMPORTANT_BINARIES_LOCATION = {
     'RUNMQSC' : '/usr/bin/runmqsc',
     'CRTMQM' : '/usr/bin/crtmqm',
@@ -66,6 +67,10 @@ IMPORTANT_BINARIES_LOCATION = {
 
 class QMGR():
     DSPMQ_REGEX = r"QMNAME\(([A-Za-z0-9]*)\) *STATUS\(([A-Za-z]*)\)"
+    #TODO: Add channels
+    #TODO: Add altering queues
+    #TODO: Validate the power status of a qmgr and only start it when needed
+    #TODO: Add a temporary folder for debugging purposes
 
     def __init__(self, name, queues):
         self.name = name
@@ -86,7 +91,8 @@ class QMGR():
             self.name
             )
         output = execute_raw_command(cmd)
-        stdout = retrieve_stdout(output)
+        stdout = "CMD: %s \n" % cmd
+        stdout += retrieve_stdout(output)
         open(out, 'w').write(stdout)
 
     def parse_dspmq(self):
@@ -130,16 +136,35 @@ class QMGR():
         output = execute_command(cmd)
         print_command_output(output)
 
-    def create_queues(self):
-        for queue_config in self.queues:
-            queue = Queue(queue_config["name"], queue_config["type"], queue_config["opts"])
-            self.run_isolated_mqsc_cmd('/tmp/queues.out',queue.generate_define_cmd())
+    def handle_queues(self):
+        for queue in self.queues:
+            if queue["state"] == "present":
+                #DEVNOTE:  Add handling for altering instead of straight creating
+                self.create_queue(queue)
+
+            elif queue["state"] == "absent":
+                self.delete_queue(queue)
+
+    def delete_queue(self, queue_config):
+        queue = Queue(queue_config["name"], queue_config["type"], queue_config["opts"])
+        output_file = os.path.join(MODULE_TEMP_FOLDER, '%s_delete_queue.out' % queue_config["name"])
+        self.run_isolated_mqsc_cmd(output_file, queue.generate_delete_cmd())
+
+    def alter_queue(self):
+        print("this is used to modify a specific queue")
+
+    def create_queue(self, queue_config):
+        queue = Queue(queue_config["name"], queue_config["type"], queue_config["opts"])
+        output_file = os.path.join(MODULE_TEMP_FOLDER, '%s_create_queue.out' % queue_config["name"])
+        self.run_isolated_mqsc_cmd(output_file, queue.generate_define_cmd())
 
     def display_queues(self):
-        self.run_isolated_mqsc_cmd('/tmp/display_queues.out',"DISPLAY QUEUE(*)")
+        output_file = os.path.join(MODULE_TEMP_FOLDER, "display_queues.out")
+        self.run_isolated_mqsc_cmd(output_file, "DISPLAY QUEUE(*)")
 
     def display_channels(self):
-        self.run_isolated_mqsc_cmd('/tmp/display_channels.out', "DISPLAY CHANNEL(*)")
+        output_file = os.path.join(MODULE_TEMP_FOLDER, "display_channels.out")
+        self.run_isolated_mqsc_cmd(output_file, "DISPLAY CHANNEL(*)")
 
 
 class Queue():
@@ -220,27 +245,30 @@ class Queue():
         print("class for a queue")
 
     def generate_define_cmd(self):
-        cmd = "DEFINE %s(%s)" % (self.type, self.name)
+        cmd = "DEFINE %s(%s) " % (self.type, self.name)
         if self.options:
             self.handle_options()
-        if len(self.args) > 0:
-            for arg in self.args:
-                cmd += " %s" % arg
+            if len(self.args) > 0:
+                cmd += ' '.join(self.args)
         return cmd
 
     def generate_alter_cmd(self):
         print("function that will generate an alter string from known queues")
 
+    def generate_delete_cmd(self):
+        return "DELETE %s(%s)" % (self.type, self.name)
+
     def handle_option(self, attribute, value):
-        print("function that will generate the argument to define")
+        if value:
+            if isinstance(value, str):
+                value = value.replace(" ", "")
+            self.args.append("%s(%s)" % (attribute, value))
 
     def handle_options(self):
         if self.VALID_ATTRIBUTES.get(self.type, False):
             for option in self.options:
                 if option in self.VALID_ATTRIBUTES[self.type]:
                     self.handle_option(option, self.options[option])
-
-
 
 
 class Channel():
@@ -256,6 +284,10 @@ class Channel():
 # DEVNOTE:
 # possible refactoring into a class with static methods that will only execute commands and
 # manage the interactions with the underlaying system
+
+def create_temp_folder():
+    if not os.path.exists(MODULE_TEMP_FOLDER):
+        os.mkdir(MODULE_TEMP_FOLDER)
 
 def print_command_output(pipe):
     stdout = ""
@@ -304,8 +336,8 @@ def run_module():
                 name=dict(required=True, type='str'),
                 type=dict(required=True, type='str', choices=["QLOCAL", "QMODEL", "QALIAS", "QREMOTE"]),
                 state=dict(type='str', default='present', choices=['present', 'absent']),
-                desc=dict(type='str'),
                 opts=dict(type='dict', options=dict(
+                  DESCR=dict(type='str'),
                   ACCTQ=dict(type='str', choices=['ON', 'OFF', 'QMGR']),
                   BOQNAME=dict(type='str'),
                   BOTHRESH=dict(type='int'),
@@ -387,17 +419,27 @@ def run_module():
         message=''
     )
 
+    create_temp_folder()
     qmgr_name = module.params['qmgr']['name']
     qmgr_state = module.params['qmgr']['state']
     qmgr_queues = module.params['qmgr']['queues']
     qmgr = QMGR(qmgr_name, qmgr_queues)
+
     if qmgr_state == "present":
-        if not qmgr.exists():
+        qmgr_exists = qmgr.exists()
+        if not qmgr_exists:
             qmgr.create()
             qmgr.start()
-            qmgr.create_queues()
+            qmgr.handle_queues()
             qmgr.display_queues()
             result['changed'] = True
+
+        if qmgr_exists:
+            if len(qmgr_queues) > 0:
+                qmgr.start()
+                qmgr.handle_queues()
+                qmgr.display_queues()
+                result['changed'] = True
 
     if qmgr_state == "absent":
         if qmgr.exists():
