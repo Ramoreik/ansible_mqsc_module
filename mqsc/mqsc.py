@@ -42,6 +42,7 @@ TODO
 '''
 import os
 import re
+import time
 import shlex
 import traceback
 import subprocess
@@ -59,52 +60,208 @@ IMPORTANT_BINARIES_LOCATION = {
     'DLTMQM' : '/usr/bin/dltmqm'
 }
 
+# ================================================================================
+# DEVNOTE:
+# Classes that manage the different MQSC concepts, QMGR, QUEUES and CHANNELS.
 
 class QMGR():
     DSPMQ_REGEX = r"QMNAME\(([A-Za-z0-9]*)\) *STATUS\(([A-Za-z]*)\)"
 
-    def __init__(self, name):
+    def __init__(self, name, queues):
         self.name = name
         self.commands_pending = []
+        self.queues = queues
+        self.mqsc_cmds = []
+
+    def execute_mqsc_script(self):
+        print("execute mqsc script")
+
+    def generate_mqsc_script(self):
+        print("execute mqsc script")
+
+    def run_isolated_mqsc_cmd(self, out, cmd):
+        cmd = "echo '%s' | %s %s" % (
+            cmd,
+            IMPORTANT_BINARIES_LOCATION["RUNMQSC"],
+            self.name
+            )
+        output = execute_raw_command(cmd)
+        stdout = retrieve_stdout(output)
+        open(out, 'w').write(stdout)
 
     def parse_dspmq(self):
         cmd = IMPORTANT_BINARIES_LOCATION['DSPMQ']
         result = execute_command(cmd)
-        module.log("DSPMQ RESULTS : %s" % result)
         matches = []
         for line in result.stdout:
             match = re.match(self.DSPMQ_REGEX, line)
             if match:
                 module.log("MATCH : %s" % match)
-                matches.append(match.groups)
+                matches.append(list(match.groups()))
         module.log("groups : %s" % matches)
         return matches
 
     def exists(self):
         parsed_dspmq = self.parse_dspmq()
-        for entry in parsed_dspmq:
-            if self.name in entry:
-                return True
+        module.log("DSPMQ RESULTS : %s" % str(parsed_dspmq))
+        if parsed_dspmq:
+            for entry in parsed_dspmq:
+                module.log("ENTRY : %s" % str(entry))
+                if self.name in entry:
+                    return True
 
     def create(self):
         cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['CRTMQM'], self.name))
-        self.commands_pending.append(cmd)
+        output = execute_command(cmd)
+        print_command_output(output)
 
     def start(self):
         cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['STRMQM'], self.name))
-        self.commands_pending.append(cmd)
+        output = execute_command(cmd)
+        print_command_output(output)
 
     def stop(self):
-        cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['ENDMQM'], self.name))
-        self.commands_pending.append(cmd)
+        cmd = shlex.split("%s -w %s" % (IMPORTANT_BINARIES_LOCATION['ENDMQM'], self.name))
+        output = execute_command(cmd)
+        print_command_output(output)
 
     def delete(self):
         cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['DLTMQM'], self.name))
-        self.commands_pending.append(cmd)
+        output = execute_command(cmd)
+        print_command_output(output)
 
-    def commit(self):
-        execute_commands(self.commands_pending)
+    def create_queues(self):
+        for queue_config in self.queues:
+            queue = Queue(queue_config["name"], queue_config["type"], queue_config["opts"])
+            self.run_isolated_mqsc_cmd('/tmp/queues.out',queue.generate_define_cmd())
 
+    def display_queues(self):
+        self.run_isolated_mqsc_cmd('/tmp/display_queues.out',"DISPLAY QUEUE(*)")
+
+    def display_channels(self):
+        self.run_isolated_mqsc_cmd('/tmp/display_channels.out', "DISPLAY CHANNEL(*)")
+
+
+class Queue():
+    QTYPES = [
+        'QLOCAL',
+        'QREMOTE',
+        'QALIAS',
+        'QMODEL'
+    ]
+
+    VALID_ATTRIBUTES = {
+        "QLOCAL" : [
+            'ACCTQ', 'BOQNAME', 'BOTHRESH',
+            'CLCHNAME', 'CLUSNL', 'CLUSTER',
+            'CLWLPRTY', 'CLWLRANK', 'CLWLUSEQ',
+            'CUSTOM', 'DEFBIND', 'DEFPRESP',
+            'DEFPRTY', 'DEFPSIST', 'DEFREADA',
+            'DEFSOPT', 'DESCR', 'DISTL',
+            'FORCE', 'GET', 'IMGRCOVQ',
+            'INDXTYPE', 'INITQ', 'LIKE',
+            'MAXDEPTH', 'MAXMSGL', 'MONQ',
+            'MSGDLVSQ', 'NOREPLACE', 'NPMCLASS',
+            'PROCESS', 'PROPCTL', 'PUT',
+            'QDEPTHHI', 'QDEPTHLO', 'QDPHIEV',
+            'QDPLOEV', 'QDPMAXEV', 'QSVCIEV',
+            'QSVINT', 'REPLACE', 'RETINTVL',
+            'SCOPE', 'SHARE', 'NOSHARE',
+            'STATQ', 'TRIGDATA', 'TRIGDPTH',
+            'TRIGGER', 'NOTRIGGER', 'TRIGMPRI',
+            'TRIGTYPE', 'USAGE'
+        ],
+        "QMODEL" : [
+            'ACCTQ', 'BOQNAME', 'BOTHRESH',
+            'CUSTOM', 'DEFPRESP', 'DEFPRTY',
+            'DEFPSIST', 'DEFREADA', 'DEFSOPT',
+            'DEFTYPE', 'DESCR', 'DISTL',
+            'GET', 'INDXTYPE', 'INITQ',
+            'LIKE', 'MAXDEPTH', 'MAXMSGL',
+            'MONQ', 'MSGDLVSQ', 'NOREPLACE',
+            'NPMCLASS', 'PROCESS', 'PROPCTL',
+            'PUT', 'QDEPTHHI', 'QDEPTHLO',
+            'QDPHIEV', 'QDPLOEV', 'QDPMAXEV',
+            'QSVCIEV', 'QSVCINT', 'REPLACE',
+            'RETINTVL', 'SHARE', 'NOSHARE',
+            'STATQ', 'TRIGDATA', 'TRIGDTPH',
+            'TRIGGER', 'NOTRIGGER', 'TRIGMPRI',
+            'TRIGTYPE', 'USAGE'
+        ],
+        "QALIAS" : [
+            'CLUSNL', 'CLUSTER', 'CLWLPRTY',
+            'CLWLRANK', 'CUSTOM', 'DEFBIND',
+            'DEFPRESP', 'DEFPRTY', 'DEFPSIST',
+            'DEFREADA', 'DESCR', 'FORCE',
+            'GET', 'LIKE', 'NOREPLACE',
+            'PROPCTL', 'PUT', 'REPLACE',
+            'SCOPE', 'TARGET', 'TARGQ',
+            'TARGTYPE'
+        ],
+        "QREMOTE" : [
+            'CLUSNL', 'CLUSTER', 'CLWLPRTY',
+            'CLWLRANK', 'CUSTOM', 'DEFBIND',
+            'DEFPRESP', 'DEFPRTY', 'DEFPSIST',
+            'DESCR', 'FORCE', 'LIKE',
+            'NOREPLACE', 'PUT', 'REPLACE',
+            'RNAME', 'RQMNAME', 'SCOPE',
+            'XMITQ'
+        ]
+    }
+
+    def __init__(self, name, qtype, options):
+        if qtype in self.QTYPES:
+            self.type = qtype
+        else:
+            raise Exception("Unknown Queue type")
+        self.name = name
+        self.options = options
+        self.args = []
+        print("class for a queue")
+
+    def generate_define_cmd(self):
+        cmd = "DEFINE %s(%s)" % (self.type, self.name)
+        if self.options:
+            self.handle_options()
+        if len(self.args) > 0:
+            for arg in self.args:
+                cmd += " %s" % arg
+        return cmd
+
+    def generate_alter_cmd(self):
+        print("function that will generate an alter string from known queues")
+
+    def handle_option(self, attribute, value):
+        print("function that will generate the argument to define")
+
+    def handle_options(self):
+        if self.VALID_ATTRIBUTES.get(self.type, False):
+            for option in self.options:
+                if option in self.VALID_ATTRIBUTES[self.type]:
+                    self.handle_option(option, self.options[option])
+
+
+
+
+class Channel():
+
+    def __init__(self):
+        print("class for a channel")
+
+    def generate_defined_cmd(self):
+        print("class to generate the channel objects define string")
+
+
+# ================================================================================
+# DEVNOTE:
+# possible refactoring into a class with static methods that will only execute commands and
+# manage the interactions with the underlaying system
+
+def print_command_output(pipe):
+    stdout = ""
+    for line in pipe.stdout:
+        stdout += line
+    module.log(stdout)
 
 def retrieve_stdout(cmd_result):
     stdout = ""
@@ -112,20 +269,21 @@ def retrieve_stdout(cmd_result):
         stdout += line
     return stdout
 
-def execute_commands(cmds):
-    try:
-        for cmd in cmds:
-            rc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE).wait()
-            if rc != 0:
-                break
-    except Exception:
-        module.fail_json(msg=traceback.format_exc())
-
 def execute_command(cmd):
         output = subprocess.Popen(cmd, stdout=subprocess.PIPE)
         output.wait()
         return output
 
+def execute_raw_command(cmd):
+        output = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
+        output.wait()
+        return output
+
+# ================================================================================
+# DEVNOTE:
+# This portions contains the functions pertaining to the presence of the necessary binaries on the FS
+# It will search the PATH, conventional locations and then fail if the binaries are not found.
+# I plan to add arguments that could be passed to the module to specify where to find these binaries (normally /opt/mqm/bin)
 
 def validate_binaries():
     for binary in IMPORTANT_BINARIES_LOCATION:
@@ -139,15 +297,15 @@ def run_module():
 # QUEUE MQSC COMMANDS :  https://www.ibm.com/support/knowledgecenter/SSFKSJ_9.1.0/com.ibm.mq.ref.adm.doc/q085690_.htm
     # define available arguments/parameters a user can pass to the module
     module_args = dict(
-        qmgr=dict(required=True, type='list', elements='dict', options=dict(
+        qmgr=dict(required=True, type='dict', options=dict(
             name=dict(required=True, type='str'),
             state=dict(type='str', default='present',choices=['present', 'absent']),
             queues=dict(type='list', elements='dict', options=dict(
                 name=dict(required=True, type='str'),
                 type=dict(required=True, type='str', choices=["QLOCAL", "QMODEL", "QALIAS", "QREMOTE"]),
-                state=dict(required=True, type='str', default='present', choices=['present', 'absent']),
+                state=dict(type='str', default='present', choices=['present', 'absent']),
                 desc=dict(type='str'),
-                opts=dict(type='list', elements='dict', options=dict(
+                opts=dict(type='dict', options=dict(
                   ACCTQ=dict(type='str', choices=['ON', 'OFF', 'QMGR']),
                   BOQNAME=dict(type='str'),
                   BOTHRESH=dict(type='int'),
@@ -213,9 +371,7 @@ def run_module():
                 type=dict(required=True, type='str'),
 
             ))
-        )),
-        name=dict(type='str', required=True),
-        new=dict(type='bool', required=False, default=False)
+        ))
     )
 
     global module
@@ -231,21 +387,22 @@ def run_module():
         message=''
     )
 
-    qmgr_name = module.params['qmgr'][0]['name']
-    qmgr_state = module.params['qmgr'][0]['state']
-    qmgr = QMGR(qmgr_name)
+    qmgr_name = module.params['qmgr']['name']
+    qmgr_state = module.params['qmgr']['state']
+    qmgr_queues = module.params['qmgr']['queues']
+    qmgr = QMGR(qmgr_name, qmgr_queues)
     if qmgr_state == "present":
         if not qmgr.exists():
             qmgr.create()
             qmgr.start()
-            qmgr.commit()
+            qmgr.create_queues()
+            qmgr.display_queues()
             result['changed'] = True
 
     if qmgr_state == "absent":
         if qmgr.exists():
             qmgr.stop()
             qmgr.delete()
-            qmgr.commit()
             result['changed'] = True
 
     if module.check_mode:
