@@ -68,14 +68,16 @@ IMPORTANT_BINARIES_LOCATION = {
 class QMGR():
     DSPMQ_REGEX = r"QMNAME\(([A-Za-z0-9]*)\) *STATUS\(([A-Za-z]*)\)"
     #TODO: Add channels
-    #TODO: Add altering queues
+    #TODO: Add altering queues and channels (this will give true idempotence)
     #TODO: Validate the power status of a qmgr and only start it when needed
     #TODO: Add a temporary folder for debugging purposes
+    #TODO: Add multiple ways of interacting with mqsc
 
-    def __init__(self, name, queues):
+    def __init__(self, name, queues=[], channels=[]):
         self.name = name
         self.commands_pending = []
         self.queues = queues
+        self.channels = channels
         self.mqsc_cmds = []
 
     def execute_mqsc_script(self):
@@ -162,6 +164,27 @@ class QMGR():
         output_file = os.path.join(MODULE_TEMP_FOLDER, "display_queues.out")
         self.run_isolated_mqsc_cmd(output_file, "DISPLAY QUEUE(*)")
 
+    def handle_channels(self):
+        for channel in self.channels:
+            if channel['state'] == "present":
+                self.create_channel(channel)
+
+            elif channel['state'] == 'absent':
+                self.delete_channel(channel)
+
+    def delete_channel(self, channel_config):
+        channel = Channel(channel_config['name'], channel_config['type'], channel_config['opts'])
+        output_file = os.path.join(MODULE_TEMP_FOLDER, '%s_delete_channel.out' % channel_config['name'] )
+        self.run_isolated_mqsc_cmd(output_file, channel.generate_delete_cmd())
+
+    def alter_channel(self, channel_config):
+        print('function to alter channel')
+
+    def create_channel(self, channel_config):
+        channel = Channel(channel_config['name'], channel_config['type'], channel_config['opts'])
+        output_file = os.path.join(MODULE_TEMP_FOLDER, '%s_create_channel.out' % channel_config['name'])
+        self.run_isolated_mqsc_cmd(output_file, channel.generate_define_cmd())
+
     def display_channels(self):
         output_file = os.path.join(MODULE_TEMP_FOLDER, "display_channels.out")
         self.run_isolated_mqsc_cmd(output_file, "DISPLAY CHANNEL(*)")
@@ -242,7 +265,6 @@ class Queue():
         self.name = name
         self.options = options
         self.args = []
-        print("class for a queue")
 
     def generate_define_cmd(self):
         cmd = "DEFINE %s(%s) " % (self.type, self.name)
@@ -272,12 +294,156 @@ class Queue():
 
 
 class Channel():
+    #TODO: ADD SVRCONN, CLUSSDR, CLUSRCVR, AMQP
+    CHLTYPE = [
+        'SDR', 'SVR', 'RCVR',
+        'RQSTR', 'CLNTCONN', 'SVRCONN',
+        'CLUSSDR', 'CLUSRCVR', 'AMQP'
+    ]
 
-    def __init__(self):
-        print("class for a channel")
+    VALID_ATTRIBUTES = {
+        'SDR': [
+            'BATCHHB', 'BATCHINT', 'BATCHLIM',
+            'BATCHSZ', 'CERTLABL', 'CHLTYPE',
+            'CMDSCOPE', 'COMPHDR', 'COMPMSG',
+            'CONNAME', 'CONVERT', 'DEFCDISP',
+            'DESCR', 'DISCINT', 'HBINT',
+            'KAINT', 'LIKE', 'LOCLADDR',
+            'LONGRTY', 'LONGTMR', 'MAXMSGL',
+            'MCANAME', 'MCATYPE', 'MODENAME',
+            'MONCHL', 'MSGDATA', 'MSGEXIT',
+            'NPMSPEED', 'PASSWORD', 'PROPCTL',
+            'QSDISP', 'RCVDATA', 'RCVEXIT',
+            'REPLACE', 'SCYDATA', 'SCYEXIT',
+            'SENDDATA', 'SENDEXIT', 'SEQWRAP',
+            'SHORTRTY', 'SHORTTMR', 'SSLCIPH',
+            'SSLPEER', 'STATCHL', 'TPNAME',
+            'TPROOT', 'USECLTID', 'USEDLQ',
+            'USERID', 'XMITQ'
+        ],
+        'SVR' : [
+            'BATCHHB', 'BATCHINT', 'BATCHLIM',
+            'BATCHSZ', 'CERTLABL', 'CHLTYPE',
+            'CMDSCOPE', 'COMPHDR', 'COMPMSG',
+            'CONNAME', 'CONVERT', 'DEFCDISP',
+            'DESCR', 'DISCINT', 'HBINT',
+            'KAINT', 'LIKE', 'LOCLADDR',
+            'LONGRTR', 'LONGTMR', 'MAXMSGL',
+            'MCANAME', 'MCATYPE', 'MODENAME',
+            'MONCHL', 'MSGDATA', 'MSGEXIT',
+            'NPMSPEED', 'PASSWORD', 'PROPCTL',
+            'PORT', 'QSDISP', 'RCVDATA',
+            'RCVEXIT', 'REPLACE', 'SCYDATA',
+            'NOREPLACE', 'SCYEXIT', 'SENDDATA',
+            'SENDEXIT', 'SEQWRAP', 'SHORTRTY',
+            'SHORTTMR', 'SSLCIPH', 'SSLPEER',
+            'STATCHL', 'TPNAME', 'TPROOT',
+            'TRPTYPE', 'USECLTID', 'USEDLQ',
+            'USERID', 'XMITQ'
+        ],
+        'RCVR' : [
+            'BATCHSZ', 'CERTLABL', 'CHLTYPE',
+            'CMDSCOPE', 'COMPHDR', 'COMPMSG',
+            'CONVERT', 'DESCR', 'HBINT',
+            'KAINT', 'LIKE', 'MAXMSGL',
+            'MCAUSER', 'MONCHL', 'MRDATA',
+            'MREXIT', 'MRRTY', 'MRTMR',
+            'MSGDATA', 'MSGEXIT', 'NPMSPEED',
+            'PORT', 'PUTAUT', 'QSDISP',
+            'RCVDATA', 'RCVEXIT', 'REPLACE',
+            'SCYDATA', 'SCYEXIT', 'SENDDATA',
+            'SENDEXIT', 'SEQWRAP', 'SSLCAUTH',
+            'SSLCIPH', 'SSLPEER', 'STATCHL',
+            'TPROOT', 'TRPTYPE', 'USECLTID',
+            'USEDLQ'
+        ],
+        'RQSTR' : [
+            'BATCHSZ', 'CERTLABL', 'CHLTYPE',
+            'CMDSCOPE', 'COMPHDR', 'COMPMSG',
+            'CONNAME', 'DESCR', 'DEFCDISP',
+            'HBINT', 'KAINT', 'LIKE',
+            'LOCLADDR', 'MAXMSGL', 'MCANAME',
+            'MCATYPE', 'MCAUSER', 'MODENAE',
+            'MONCHL', 'MRDATA', 'MREXIT',
+            'MRRTY', 'MRTMR', 'MSGDATA',
+            'MSGEXIT', 'NPMSPEED', 'PASSWORD',
+            'PORT', 'PUTAUT', 'QSDISP',
+            'RCVDATA', 'RCVEXIT', 'REPLACE',
+            'SCYDATA', 'SCYEXIT', 'SENDDATA',
+            'SENDEXIT', 'SEQWRAP', 'SSLCAUTH',
+            'SSLCIPH', 'SSLPEER', 'TPNAME',
+            'TPROOT', 'TRPTYPE', 'USECLTID',
+            'USEDLQ', 'USERID'
+        ],
+        'CLNTCONN' : [
+            'AFFINITY', 'CERTLABL', 'CHLTYPE',
+            'CLNTWGHT', 'CMDSCOPE', 'COMPHDR',
+            'COMPMSG', 'CONNAME', 'DEFRECON',
+            'DESCR', 'HBINT', 'KAINT', 'LIKE',
+            'LOCLADDR', 'MAXMSGL', 'MODENAME',
+            'PASSWORD', 'QMNAME', 'QSDISP',
+            'RCVDATA', 'RCVEXIT', 'REPLACE',
+            'SCYDATA', 'SCYEXIT', 'SENDDATA',
+            'SENDEXIT', 'SHARECNV', 'SSLCIPH',
+            'SSLPEER', 'TPNAME', 'USECLTID',
+            'USERID'
+        ]
+    }
 
-    def generate_defined_cmd(self):
-        print("class to generate the channel objects define string")
+    REQUIRED_ATTRIBUTES = {
+        'SVR' : [
+            'XMITQ'
+        ],
+        'SDR' : [
+            'CONNAME',
+            'XMITQ'
+        ],
+        'RQSTR' : [
+            'CONNAME'
+        ]
+    }
+    def __init__(self, name, chltype, options):
+        if chltype in self.CHLTYPE:
+            self.type = chltype
+        else:
+            raise Exception("Unknown Channel type")
+        self.name = name
+        self.options = options
+        self.args = []
+
+    def validate_required_options(self):
+        if self.REQUIRED_ATTRIBUTES.get(self.type, False):
+            for required_attribute in self.REQUIRED_ATTRIBUTES[self.type]:
+                if not self.options[required_attribute]:
+                    raise Exception("Missing required option : %s for %s channel." \
+                        % (required_attribute, self.type))
+
+    def generate_define_cmd(self):
+        self.validate_required_options()
+        cmd = "DEFINE CHANNEL(%s) CHLTYPE(%s) " % (self.name, self.type)
+        if self.options:
+            self.handle_options()
+            if len(self.args) > 0:
+                cmd += ' '.join(self.args)
+        return cmd
+
+    def genrate_alter_cmd(self):
+        print("Function to generate the alter command for this channel")
+
+    def generate_delete_cmd(self):
+        return "DELETE CHANNEL(%s)" % self.name
+
+    def handle_option(self, attribute, value):
+        if value:
+            if isinstance(value, str):
+                value = value.replace(" ", "")
+            self.args.append("%s(%s)" % (attribute, value))
+
+    def handle_options(self):
+        if self.VALID_ATTRIBUTES.get(self.type, False):
+            for option in self.options:
+                if option in self.VALID_ATTRIBUTES[self.type]:
+                    self.handle_option(option, self.options[option])
 
 
 # ================================================================================
@@ -326,12 +492,90 @@ def validate_binaries():
 
 
 def run_module():
-# QUEUE MQSC COMMANDS :  https://www.ibm.com/support/knowledgecenter/SSFKSJ_9.1.0/com.ibm.mq.ref.adm.doc/q085690_.htm
+    # QUEUE MQSC COMMANDS :  https://www.ibm.com/support/knowledgecenter/SSFKSJ_9.1.0/com.ibm.mq.ref.adm.doc/q085690_.htm
     # define available arguments/parameters a user can pass to the module
     module_args = dict(
         qmgr=dict(required=True, type='dict', options=dict(
             name=dict(required=True, type='str'),
             state=dict(type='str', default='present',choices=['present', 'absent']),
+            channels=dict(type='list', elements='dict', options=dict(
+              name=dict(required=True, type='str'),
+              type=dict(required=True, type='str'),
+              state=dict(type='str', default='present', choices=['present', 'absent']),
+              opts=dict(type='dict', options=dict(
+                  AFFINITY=dict(type='str', choices=['PREFERRED', 'NONE']),
+                  BATCHHB=dict(type='int'),
+                  BATCHINT=dict(type='int'),
+                  BATCHLIM=dict(type='int'),
+                  BATCHSZ=dict(type='int'),
+                  CERTLABL=dict(type='str'),
+                  CLNTWGHT=dict(type='int'),
+                  CLUSNL=dict(type='str'),
+                  CLUSTER=dict(type='str'),
+                  CLWLPRTY=dict(type='int'),
+                  CLWLRANK=dict(type='int'),
+                  CLWLWGHT=dict(type='int'),
+                  CMDSCOPE=dict(type='str'),
+                  COMPHDR=dict(type='str', choices=['NONE', 'SYSTEM']),
+                  COMPMSG=dict(type='str', choices=['NONE', 'RLE', 'ZLIBFAST', 'ZLIBHIGH', 'ANY']),
+                  CONNAME=dict(type='str'),
+                  CONVERT=dict(type='str', choices=['YES', 'NO']),
+                  DEFCDISP=dict(type='str', choices=['PRIVATE', 'FIXSHARED', 'SHARED']),
+                  DEFRECON=dict(type='str', choices=['NO', 'YES', 'QMGR', 'DISABLED']),
+                  DESCR=dict(type='str'),
+                  DISCINT=dict(type='int'),
+                  HBINT=dict(type='int'),
+                  KAINT=dict(type='int'),
+                  LIKE=dict(type='str'),
+                  LOCLADDR=dict(type='str'),
+                  LONGRTY=dict(type='int'),
+                  LONGTMR=dict(type='int'),
+                  MAXINST=dict(type='int'),
+                  MAXINSTC=dict(type='int'),
+                  MAXMSGL=dict(type='int'),
+                  MCANAME=dict(type='str'),
+                  MCATYPE=dict(type='str', choices=['PROCESS', 'THREAD']),
+                  MCAUSER=dict(type='str'),
+                  MODENAME=dict(type='str'),
+                  MONCHL=dict(type='str', choices=['QMGR', 'OFF', 'LOW', 'MEDIUM', 'HIGH']),
+                  MRDATA=dict(type='str'),
+                  MREXIT=dict(type='str'),
+                  MRRTY=dict(type='int'),
+                  MRTRM=dict(type='int'),
+                  MSGDATA=dict(type='str'),
+                  MSGEXIT=dict(type='str'),
+                  NETPRTY=dict(type='int'),
+                  NPMSPEED=dict(type='str', choices=['FAST', 'NORMAL']),
+                  PASSWORD=dict(type='str'),
+                  PROPCTL=dict(type='str', choices=['COMPAT', 'NONE', 'ALL']),
+                  PUTAUT=dict(type='str', choices=['DEF', 'CTX', 'ONLYMCA', 'ALTMCA']),
+                  QMNAME=dict(type='str'),
+                  QSGDISP=dict(type='str', choice=['COPY', 'GROUP', 'PRIVATE', 'QMGR']),
+                  RCVDATA=dict(type='str'),
+                  RCVEXIT=dict(type='str'),
+                  REPLACE=dict(type='bool'),
+                  NOREPLACE=dict(type='bool'),
+                  SCYDATA=dict(type='str'),
+                  SCYEXIT=dict(type='str'),
+                  SENDDATA=dict(type='str'),
+                  SENDEXIT=dict(type='str'),
+                  SEQWRAP=dict(type='int'),
+                  SHARECNV=dict(type='int'),
+                  SHORTTRY=dict(typ='int'),
+                  SHOTTMR=dict(type='int'),
+                  SSLCAUTH=dict(type='str', choices=['REQUIRED', 'OPTIONAL']),
+                  SSLCIPH=dict(type='str'),
+                  SSLPEER=dict(type='str'),
+                  STATCHL=dict(type='str', choices=['QMGR', 'OFF', 'LOW', 'MEDIUM', 'HIGH']),
+                  TPNAME=dict(type='str'),
+                  TPROOT=dict(type='str'),
+                  TRPTYPE=dict(type='str', choices=['LU62', 'NETBIOS', 'SPX', 'TCP']),
+                  USECLID=dict(type='bool'),
+                    USEDLQ=dict(type='str', choices=['NO','YES']),
+                    USERID=dict(type='str'),
+                    XMITQ=dict(type='str')
+              ))
+            )),
             queues=dict(type='list', elements='dict', options=dict(
                 name=dict(required=True, type='str'),
                 type=dict(required=True, type='str', choices=["QLOCAL", "QMODEL", "QALIAS", "QREMOTE"]),
@@ -397,11 +641,6 @@ def run_module():
                   USAGE=dict(type='str', choices=['NORMAL', 'XMITQ']),
                   XMITQ=dict(type='str')
                 ))
-            )),
-            channels=dict(type='list', elements='dict', option=dict(
-                name=dict(required=True, type='str'),
-                type=dict(required=True, type='str'),
-
             ))
         ))
     )
@@ -423,7 +662,8 @@ def run_module():
     qmgr_name = module.params['qmgr']['name']
     qmgr_state = module.params['qmgr']['state']
     qmgr_queues = module.params['qmgr']['queues']
-    qmgr = QMGR(qmgr_name, qmgr_queues)
+    qmgr_channels = module.params['qmgr']['channels']
+    qmgr = QMGR(qmgr_name, qmgr_queues, qmgr_channels)
 
     if qmgr_state == "present":
         qmgr_exists = qmgr.exists()
@@ -440,6 +680,13 @@ def run_module():
                 qmgr.handle_queues()
                 qmgr.display_queues()
                 result['changed'] = True
+
+            if len(qmgr_channels) > 0:
+                qmgr.start()
+                qmgr.handle_channels()
+                qmgr.display_channels()
+                result['changed'] = True
+            module.exit_json(**result)
 
     if qmgr_state == "absent":
         if qmgr.exists():
