@@ -66,7 +66,9 @@ IMPORTANT_BINARIES_LOCATION = {
 # Classes that manage the different MQSC concepts, QMGR, QUEUES and CHANNELS.
 
 class QMGR():
-    DSPMQ_REGEX = r"QMNAME\(([A-Za-z0-9]*)\) *STATUS\(([A-Za-z]*)\)"
+    DSPMQ_REGEX = r'QMNAME\(([A-Za-z0-9]*)\) *STATUS\(([A-Za-z]*)\)'
+    DISPLAY_QUEUE_REGEX = r' *QUEUE\(([A-Z\_\.]*)\) *[\n]?TYPE\(([A-Z]*)\)'
+    QUEUE_ATTRIBUTES_REGEX = r'   ([A-Z]*)\(([A-Z_\-\.[0-9\\ ]*)\)'
     #TODO: Add channels
     #TODO: Add altering queues and channels (this will give true idempotence)
     #TODO: Validate the power status of a qmgr and only start it when needed
@@ -76,9 +78,16 @@ class QMGR():
     def __init__(self, name, queues=[], channels=[]):
         self.name = name
         self.commands_pending = []
+        self.existing_queues = []
         self.queues = queues
         self.channels = channels
         self.mqsc_cmds = []
+        self.fetch_current_state()
+
+    def fetch_current_state(self):
+        self.retrieve_existing_queues()
+        self.parse_existing_queues()
+        open(os.path.join(MODULE_TEMP_FOLDER, 'fetch_current_state.out'), 'w').write(str(self.existing_queues))
 
     def execute_mqsc_script(self):
         print("execute mqsc script")
@@ -91,11 +100,20 @@ class QMGR():
             cmd,
             IMPORTANT_BINARIES_LOCATION["RUNMQSC"],
             self.name
-            )
+        )
         output = execute_raw_command(cmd)
         stdout = "CMD: %s \n" % cmd
         stdout += retrieve_stdout(output)
         open(out, 'w').write(stdout)
+
+    def run_mqsc_cmd_stdout(self, cmd):
+        cmd = "echo '%s' | %s %s" % (
+            cmd,
+            IMPORTANT_BINARIES_LOCATION['RUNMQSC'],
+            self.name
+        )
+        output = execute_raw_command(cmd)
+        return retrieve_stdout(output)
 
     def parse_dspmq(self):
         cmd = IMPORTANT_BINARIES_LOCATION['DSPMQ']
@@ -140,25 +158,80 @@ class QMGR():
 
     def handle_queues(self):
         for queue in self.queues:
+            existing_queue = self.queue_exists(queue)
             if queue["state"] == "present":
-                #DEVNOTE:  Add handling for altering instead of straight creating
-                self.create_queue(queue)
+                if existing_queue:
+                    self.alter_queue(queue, existing_queue)
+                else:
+                    self.create_queue(queue)
 
             elif queue["state"] == "absent":
-                self.delete_queue(queue)
+                if existing_queue is not None:
+                    self.delete_queue(queue)
+
+    def queue_exists(self, queue):
+        seeked_queue = None
+        for existing_queue in self.existing_queues:
+            if existing_queue['name'] == queue['name']\
+                and existing_queue['type'] == queue['type']:
+                seeked_queue = existing_queue
+        return seeked_queue
 
     def delete_queue(self, queue_config):
         queue = Queue(queue_config["name"], queue_config["type"], queue_config["opts"])
         output_file = os.path.join(MODULE_TEMP_FOLDER, '%s_delete_queue.out' % queue_config["name"])
         self.run_isolated_mqsc_cmd(output_file, queue.generate_delete_cmd())
 
-    def alter_queue(self):
-        print("this is used to modify a specific queue")
+    def alter_queue(self, wanted_queue, existing_queue):
+        queue = Queue(existing_queue['name'], existing_queue['type'], existing_queue['opts'])
+        output_file = os.path.join(MODULE_TEMP_FOLDER, '%s_alter_queue.out' % existing_queue['name'])
+        cmd = queue.generate_alter_cmd(wanted_queue)
+        if cmd:
+            self.run_isolated_mqsc_cmd(output_file, cmd)
 
     def create_queue(self, queue_config):
         queue = Queue(queue_config["name"], queue_config["type"], queue_config["opts"])
         output_file = os.path.join(MODULE_TEMP_FOLDER, '%s_create_queue.out' % queue_config["name"])
         self.run_isolated_mqsc_cmd(output_file, queue.generate_define_cmd())
+
+    def retrieve_existing_queues(self):
+        #TODO: Refactor this function it ressembles parse dspmq too much
+        print("do regex to parse display output")
+        cmd = "DISPLAY QUEUE(*)"
+        queues = self.run_mqsc_cmd_stdout(cmd)
+        matches = []
+        lines = []
+        for line in queues.split('\n'):
+            match = re.match(self.DISPLAY_QUEUE_REGEX, line)
+            lines.append(line)
+            if match:
+                matches.append(list(match.groups()))
+        for match in matches:
+            queue = {
+                "name" : match[0],
+                "type" : match[1]
+            }
+            self.existing_queues.append(queue)
+
+    def parse_existing_queues(self):
+        #TODO: Refactor this function it ressembles parse dspmq too much
+        #TODO: find a better solution for hotfix on line 223
+        queues = []
+        for queue in self.existing_queues:
+            cmd = "DISPLAY QUEUE(%s)" % queue['name']
+            stdout = self.run_mqsc_cmd_stdout(cmd)
+            stdout = stdout.replace('\n','')
+            matches = re.findall(self.QUEUE_ATTRIBUTES_REGEX, stdout)
+            defined_queue = {
+                "name": queue['name'],
+                "type": queue['type'],
+                "opts": {}
+            }
+            for match in matches:
+                defined_queue["opts"][match[0]] = match[1]
+            queues.append(defined_queue)
+        self.existing_queues = queues
+
 
     def display_queues(self):
         output_file = os.path.join(MODULE_TEMP_FOLDER, "display_queues.out")
@@ -274,8 +347,22 @@ class Queue():
                 cmd += ' '.join(self.args)
         return cmd
 
-    def generate_alter_cmd(self):
-        print("function that will generate an alter string from known queues")
+    def generate_alter_cmd(self, wanted_queue):
+        attributes_to_alter = self.handle_queue_delta(wanted_queue['opts'])
+        if len(attributes_to_alter) > 0:
+            cmd = "ALTER %s(%s) " % (wanted_queue['type'], wanted_queue['name'])
+            cmd += ' '.join(attributes_to_alter)
+            return cmd
+
+    def handle_queue_delta(self, wanted_options):
+        attributes_to_alter = []
+        for opt in wanted_options:
+            if isinstance(wanted_options[opt], str):
+                wanted_options[opt] = wanted_options[opt].upper()
+            if wanted_options[opt]:
+                if self.options[opt] != str(wanted_options[opt]):
+                    attributes_to_alter.append("%s(%s)" % (opt, wanted_options[opt]))
+        return attributes_to_alter
 
     def generate_delete_cmd(self):
         return "DELETE %s(%s)" % (self.type, self.name)
