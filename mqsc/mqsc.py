@@ -67,8 +67,9 @@ IMPORTANT_BINARIES_LOCATION = {
 
 class QMGR():
     DSPMQ_REGEX = r'QMNAME\(([A-Za-z0-9]*)\) *STATUS\(([A-Za-z]*)\)'
-    DISPLAY_QUEUE_REGEX = r' *QUEUE\(([A-Z\_\.]*)\) *[\n]?TYPE\(([A-Z]*)\)'
-    QUEUE_ATTRIBUTES_REGEX = r'   ([A-Z]*)\(([A-Z_\-\.[0-9\\ ]*)\)'
+    DISPLAY_QUEUE_REGEX = r' *QUEUE\(([A-Z\_\.0-9]*)\) *[\n]?TYPE\(([A-Z]*)\)'
+    DISPLAY_CHANNEL_REGEX = r' *CHANNEL\(([A-Z\_\.0-9]*)\) *[\n]?CHLTYPE\(([A-Z]*)\)'
+    ATTRIBUTES_REGEX = r'   ([A-Z]*)\(([A-Z_\-\.[0-9\\ ]*)\)'
     #TODO: Add channels
     #TODO: Add altering queues and channels (this will give true idempotence)
     #TODO: Validate the power status of a qmgr and only start it when needed
@@ -79,6 +80,7 @@ class QMGR():
         self.name = name
         self.commands_pending = []
         self.existing_queues = []
+        self.existing_channels = []
         self.queues = queues
         self.channels = channels
         self.mqsc_cmds = []
@@ -87,7 +89,14 @@ class QMGR():
     def fetch_current_state(self):
         self.retrieve_existing_queues()
         self.parse_existing_queues()
-        open(os.path.join(MODULE_TEMP_FOLDER, 'fetch_current_state.out'), 'w').write(str(self.existing_queues))
+
+        self.retrieve_existing_channels()
+        self.parse_existing_channels()
+
+        open(os.path.join(MODULE_TEMP_FOLDER, 'fetch_current_state_queues.out'), \
+            'w').write(str(self.existing_queues))
+        open(os.path.join(MODULE_TEMP_FOLDER, 'fetch_current_state_channels.out'),\
+            'w').write(str(self.existing_channels))
 
     def execute_mqsc_script(self):
         print("execute mqsc script")
@@ -195,15 +204,11 @@ class QMGR():
         self.run_isolated_mqsc_cmd(output_file, queue.generate_define_cmd())
 
     def retrieve_existing_queues(self):
-        #TODO: Refactor this function it ressembles parse dspmq too much
-        print("do regex to parse display output")
         cmd = "DISPLAY QUEUE(*)"
         queues = self.run_mqsc_cmd_stdout(cmd)
         matches = []
-        lines = []
         for line in queues.split('\n'):
             match = re.match(self.DISPLAY_QUEUE_REGEX, line)
-            lines.append(line)
             if match:
                 matches.append(list(match.groups()))
         for match in matches:
@@ -221,7 +226,7 @@ class QMGR():
             cmd = "DISPLAY QUEUE(%s)" % queue['name']
             stdout = self.run_mqsc_cmd_stdout(cmd)
             stdout = stdout.replace('\n','')
-            matches = re.findall(self.QUEUE_ATTRIBUTES_REGEX, stdout)
+            matches = re.findall(self.ATTRIBUTES_REGEX, stdout)
             defined_queue = {
                 "name": queue['name'],
                 "type": queue['type'],
@@ -232,26 +237,75 @@ class QMGR():
             queues.append(defined_queue)
         self.existing_queues = queues
 
-
     def display_queues(self):
         output_file = os.path.join(MODULE_TEMP_FOLDER, "display_queues.out")
         self.run_isolated_mqsc_cmd(output_file, "DISPLAY QUEUE(*)")
 
     def handle_channels(self):
         for channel in self.channels:
+            existing_channel = self.channel_exists(channel)
             if channel['state'] == "present":
-                self.create_channel(channel)
+                if existing_channel:
+                    self.alter_channel(channel, existing_channel)
+                else:
+                    self.create_channel(channel)
 
             elif channel['state'] == 'absent':
-                self.delete_channel(channel)
+                if existing_channel != None:
+                    self.delete_channel(channel)
+
+    def channel_exists(self, channel):
+        seeked_channel = None
+        for existing_channel in self.existing_channels:
+            if existing_channel['name'] == channel['name']\
+                and existing_channel['type'] == channel['type']:
+                seeked_channel = existing_channel
+        return seeked_channel
+
+    def retrieve_existing_channels(self):
+        cmd = "DISPLAY CHANNEL(*)"
+        channels = self.run_mqsc_cmd_stdout(cmd)
+        matches = []
+        for line in channels.split('\n'):
+            match = re.match(self.DISPLAY_CHANNEL_REGEX, line)
+            if match:
+                matches.append(list(match.groups()))
+        for match in matches:
+            channel = {
+                "name" : match[0],
+                "type" : match[1]
+            }
+            self.existing_channels.append(channel)
+
+    def parse_existing_channels(self):
+        #TODO: Refactor code is too similar for Q and Channel
+        channels = []
+        for channel in self.existing_channels:
+            cmd = "DISPLAY CHANNEL(%s)" % channel['name']
+            stdout = self.run_mqsc_cmd_stdout(cmd)
+            stdout = stdout.replace('\n','')
+            matches = re.findall(self.ATTRIBUTES_REGEX, stdout)
+            defined_channel = {
+                "name": channel['name'],
+                "type": channel['type'],
+                "opts": {}
+            }
+            for match in matches:
+                defined_channel["opts"][match[0]] = match[1]
+            channels.append(defined_channel)
+        self.existing_channels = channels
 
     def delete_channel(self, channel_config):
         channel = Channel(channel_config['name'], channel_config['type'], channel_config['opts'])
         output_file = os.path.join(MODULE_TEMP_FOLDER, '%s_delete_channel.out' % channel_config['name'] )
         self.run_isolated_mqsc_cmd(output_file, channel.generate_delete_cmd())
 
-    def alter_channel(self, channel_config):
-        print('function to alter channel')
+    def alter_channel(self, wanted_channel, existing_channel):
+        channel = Channel(existing_channel['name'], existing_channel['type'], existing_channel['opts'])
+        output_file = os.path.join(MODULE_TEMP_FOLDER, '%s_alter_channel.out' % existing_channel['name'])
+        cmd = channel.generate_alter_cmd(wanted_channel)
+        if cmd:
+            self.run_isolated_mqsc_cmd(output_file, cmd)
 
     def create_channel(self, channel_config):
         channel = Channel(channel_config['name'], channel_config['type'], channel_config['opts'])
@@ -514,8 +568,22 @@ class Channel():
                 cmd += ' '.join(self.args)
         return cmd
 
-    def genrate_alter_cmd(self):
-        print("Function to generate the alter command for this channel")
+    def generate_alter_cmd(self, wanted_channel):
+        attributes_to_alter = self.handle_channel_delta(wanted_channel['opts'])
+        if len(attributes_to_alter) > 0:
+            cmd = "ALTER CHANNEL(%s) CHLTYPE(%s) " % (wanted_channel['name'], wanted_channel['type'])
+            cmd += ' '.join(attributes_to_alter)
+            return cmd
+
+    def handle_channel_delta(self, wanted_options):
+        attributes_to_alter = []
+        for opt in wanted_options:
+            if isinstance(wanted_options[opt], str):
+                wanted_options[opt] = wanted_options[opt].upper()
+            if wanted_options[opt]:
+                if str(self.options[opt]) != str(wanted_options[opt]):
+                    attributes_to_alter.append("%s(%s)" % (opt, wanted_options[opt]))
+        return attributes_to_alter
 
     def generate_delete_cmd(self):
         return "DELETE CHANNEL(%s)" % self.name
@@ -758,7 +826,9 @@ def run_module():
             qmgr.create()
             qmgr.start()
             qmgr.handle_queues()
+            qmgr.handle_channels()
             qmgr.display_queues()
+            qmgr.display_channels()
             result['changed'] = True
 
         if qmgr_exists:
