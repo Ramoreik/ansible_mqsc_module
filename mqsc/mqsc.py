@@ -77,7 +77,8 @@ class QMGR():
     #TODO: Add a temporary folder for debugging purposes
     #TODO: Add multiple ways of interacting with mqsc
 
-    def __init__(self, name, queues=[], channels=[]):
+    def __init__(self, name, queues=[], channels=[], state='present'):
+        self.state = state
         self.name = name
         self.commands_pending = []
         self.existing_queues = []
@@ -615,6 +616,7 @@ class Channel():
                 if option in self.VALID_ATTRIBUTES[self.type]:
                     self.handle_option(option, self.options[option])
 
+class Listener():
 
 # ================================================================================
 # DEVNOTE:
@@ -846,12 +848,12 @@ def run_module():
         qmgr_state = config['state']
         qmgr_queues = config['queues']
         qmgr_channels = config['channels']
-        qmgr = QMGR(qmgr_name, qmgr_queues, qmgr_channels)
+        qmgr = QMGR(qmgr_name, qmgr_queues, qmgr_channels, qmgr_state)
         qmgrs.append(qmgr)
 
     # Iterate over QMGRS
     for qmgr in qmgrs:
-        if qmgr_state == "present":
+        if qmgr.state == "present":
             qmgr_exists = qmgr.exists()
             if not qmgr_exists:
                 qmgr.create()
@@ -876,7 +878,7 @@ def run_module():
                     result['changed'] = True
                 module.exit_json(**result)
 
-        if qmgr_state == "absent":
+        if qmgr.state == "absent":
             if qmgr.exists():
                 qmgr.stop()
                 qmgr.delete()
