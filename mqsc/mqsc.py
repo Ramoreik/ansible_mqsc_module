@@ -1032,8 +1032,8 @@ def run_module():
 
         if qmgr.state == "absent":
             if qmgr.exists():
-                qmgr.stop()
                 qmgr.stop_listeners()
+                qmgr.stop()
                 qmgr.delete()
                 result['changed'] = True
 
