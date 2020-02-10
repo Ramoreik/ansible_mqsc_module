@@ -137,13 +137,15 @@ class QMGR():
         return matches
 
     def exists(self):
+        qmgr_exists = False
         parsed_dspmq = self.parse_dspmq()
         module.log("DSPMQ RESULTS : %s" % str(parsed_dspmq))
         if parsed_dspmq:
             for entry in parsed_dspmq:
                 module.log("ENTRY : %s" % str(entry))
                 if self.name in entry:
-                    return True
+                    qmgr_exists = True
+        return qmgr_exists
 
     def create(self):
         cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['CRTMQM'], self.name))
