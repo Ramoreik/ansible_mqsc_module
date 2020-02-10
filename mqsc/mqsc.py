@@ -69,7 +69,7 @@ IMPORTANT_BINARIES_LOCATION = {
 # Classes that manage the different MQSC concepts, QMGR, QUEUES and CHANNELS.
 
 class QMGR():
-    DSPMQ_REGEX = r'QMNAME\(([A-Za-z0-9\.]*)\) *STATUS\(([A-Za-z]*)\)'
+    DSPMQ_REGEX = r'QMNAME\(([A-Za-z0-9\.]*)\) *STATUS\(([A-Z a-z]*)\)'
     DISPLAY_QUEUE_REGEX = r' *QUEUE\(([A-Z\_\.0-9]*)\) *[\n]?TYPE\(([A-Z]*)\)'
     DISPLAY_CHANNEL_REGEX = r' *CHANNEL\(([A-Z\_\.0-9]*)\) *[\n]?CHLTYPE\(([A-Z]*)\)'
     DISPLAY_LISTENER_REGEX = r' *LISTENER\(([A-Z\_\.0-9]*\)'
@@ -199,6 +199,15 @@ class QMGR():
                 if existing_listener is not None:
                     self.delete_listener(listener)
 
+    def stop_listeners(self):
+        for listener in self.listeners:
+            self.stop_listener(listener)
+
+    def stop_listener(self, listener_config):
+        listener = Listener(listener_config['name'], listener_config['trptype'], listener_config['port'])
+        output_file = os.path.join(MODULE_TEMP_FOLDER, '%s_stop_listener.out' % listener_config['name'])
+        self.run_isolated_mqsc_cmd(output_file, listener.generate_stop_cmd())
+            
     def delete_listener(self, listener_config):
         listener = Listener(listener_config['name'], listener_config['trptype'], listener_config['port'])
         output_file = os.path.join(MODULE_TEMP_FOLDER, '%s_delete_listener.out' % listener_config['name'])
@@ -717,7 +726,9 @@ class Listener():
     
     def generate_start_cmd(self):
         return "START LISTENER(%s)" % self.name
-
+    
+    def generate_stop_cmd(self):
+        return "STOP LISTENER(%s)" % self.name
 
 # ================================================================================
 # DEVNOTE:
@@ -1012,6 +1023,7 @@ def run_module():
         if qmgr.state == "absent":
             if qmgr.exists():
                 qmgr.stop()
+                qmgr.stop_listeners()
                 qmgr.delete()
                 result['changed'] = True
 
