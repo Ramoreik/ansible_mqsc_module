@@ -67,7 +67,7 @@ IMPORTANT_BINARIES_LOCATION = {
 # Classes that manage the different MQSC concepts, QMGR, QUEUES and CHANNELS.
 
 class QMGR():
-    DSPMQ_REGEX = r'QMNAME\(([A-Za-z0-9]*)\) *STATUS\(([A-Za-z]*)\)'
+    DSPMQ_REGEX = r'QMNAME\(([A-Za-z0-9\.]*)\) *STATUS\(([A-Za-z]*)\)'
     DISPLAY_QUEUE_REGEX = r' *QUEUE\(([A-Z\_\.0-9]*)\) *[\n]?TYPE\(([A-Z]*)\)'
     DISPLAY_CHANNEL_REGEX = r' *CHANNEL\(([A-Z\_\.0-9]*)\) *[\n]?CHLTYPE\(([A-Z]*)\)'
     ATTRIBUTES_REGEX = r'   ([A-Z]*)\(([A-Z_\-\.[0-9\\ ]*)\)'
