@@ -183,6 +183,7 @@ class QMGR():
                     print("WIP")
                 else:
                     self.create_listener(listener)
+                    self.start_listerner(listener)
             if listener["state"] == "absent":
                 if existing_listener is not None:
                     self.delete_listener(listener)
