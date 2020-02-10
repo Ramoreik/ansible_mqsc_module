@@ -94,6 +94,17 @@ class QMGR():
         self.mqsc_cmds = []
         self.fetch_current_state()
 
+    def handle_permissions(self):
+        for permission in self.permissions:
+            cmd = "%s -t %s -n %s -p %s %s" % \
+                (IMPORTANT_BINARIES_LOCATION['SETMQAUT'], \
+                    permission['object'], 
+                    permission['profile'], 
+                    permission['principal'],
+                    ' '.join(permission['authorizations']))
+            execute_command(cmd) 
+
+
     def fetch_current_state(self):
         self.retrieve_existing_queues()
         self.parse_existing_queues()
@@ -953,8 +964,9 @@ def run_module():
         qmgr_queues = config['queues']
         qmgr_channels = config['channels']
         qmgr_listeners = config['listeners']
+        qmgr_permissions = config['permissions']
         qmgr = QMGR(name=qmgr_name, state=qmgr_state, queues=qmgr_queues,\
-            channels=qmgr_channels, listeners=qmgr_listeners)
+            channels=qmgr_channels, listeners=qmgr_listeners, permissions=qmgr_permissions)
         qmgrs.append(qmgr)
 
     # Iterate over QMGRS
@@ -967,11 +979,17 @@ def run_module():
                 qmgr.handle_queues()
                 qmgr.handle_channels()
                 qmgr.handle_listeners()
+                qmgr.handle_permissions()
                 qmgr.display_queues()
                 qmgr.display_channels()
                 result['changed'] = True
 
             if qmgr_exists:
+                if len(qmgr_permissions) > 0:
+                    qmgr.start()
+                    qmgr.handle_permissions()
+                    result['changed'] = True
+
                 if len(qmgr_queues) > 0:
                     qmgr.start()
                     qmgr.handle_queues()
@@ -983,9 +1001,12 @@ def run_module():
                     qmgr.handle_channels()
                     qmgr.display_channels()
                     result['changed'] = True
+
                 if len(qmgr.listeners) > 0:
                     qmgr.start()
                     qmgr.handle_listeners()
+                    result['changed'] = True
+
                 module.exit_json(**result)
 
         if qmgr.state == "absent":
