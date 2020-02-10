@@ -657,7 +657,7 @@ def run_module():
     # define available arguments/parameters a user can pass to the module
     module_args = dict(
         binary_path=dict(type='str', default='/opt/mqm/bin'),
-        qmgr=dict(required=True, type='dict', options=dict(
+        qmgrs=dict(required=True, type='list', elements='dict', options=dict(
             name=dict(required=True, type='str'),
             state=dict(type='str', default='present',choices=['present', 'absent']),
             channels=dict(type='list', elements='dict', options=dict(
@@ -824,44 +824,51 @@ def run_module():
     binary_path = module.params['binary_path']
     validate_binaries()
 
-    # Initialize Module
+    # Initialize Temp files
     create_temp_folder()
-    qmgr_name = module.params['qmgr']['name']
-    qmgr_state = module.params['qmgr']['state']
-    qmgr_queues = module.params['qmgr']['queues']
-    qmgr_channels = module.params['qmgr']['channels']
-    qmgr = QMGR(qmgr_name, qmgr_queues, qmgr_channels)
 
-    if qmgr_state == "present":
-        qmgr_exists = qmgr.exists()
-        if not qmgr_exists:
-            qmgr.create()
-            qmgr.start()
-            qmgr.handle_queues()
-            qmgr.handle_channels()
-            qmgr.display_queues()
-            qmgr.display_channels()
-            result['changed'] = True
+    # Initialize QMGRS
+    qmgrs = []
+    for config in module.params['qmgrs']:
+        qmgr_name = config['name']
+        qmgr_state = config['state']
+        qmgr_queues = config['queues']
+        qmgr_channels = config['channels']
+        qmgr = QMGR(qmgr_name, qmgr_queues, qmgr_channels)
+        qmgrs.append(qmgr)
 
-        if qmgr_exists:
-            if len(qmgr_queues) > 0:
+    # Iterate over QMGRS
+    for qmgr in qmgrs:
+        if qmgr_state == "present":
+            qmgr_exists = qmgr.exists()
+            if not qmgr_exists:
+                qmgr.create()
                 qmgr.start()
                 qmgr.handle_queues()
-                qmgr.display_queues()
-                result['changed'] = True
-
-            if len(qmgr_channels) > 0:
-                qmgr.start()
                 qmgr.handle_channels()
+                qmgr.display_queues()
                 qmgr.display_channels()
                 result['changed'] = True
-            module.exit_json(**result)
 
-    if qmgr_state == "absent":
-        if qmgr.exists():
-            qmgr.stop()
-            qmgr.delete()
-            result['changed'] = True
+            if qmgr_exists:
+                if len(qmgr_queues) > 0:
+                    qmgr.start()
+                    qmgr.handle_queues()
+                    qmgr.display_queues()
+                    result['changed'] = True
+
+                if len(qmgr_channels) > 0:
+                    qmgr.start()
+                    qmgr.handle_channels()
+                    qmgr.display_channels()
+                    result['changed'] = True
+                module.exit_json(**result)
+
+        if qmgr_state == "absent":
+            if qmgr.exists():
+                qmgr.stop()
+                qmgr.delete()
+                result['changed'] = True
 
     if module.check_mode:
         module.exit_json(**result)
