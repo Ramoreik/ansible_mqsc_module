@@ -60,8 +60,8 @@ IMPORTANT_BINARIES_LOCATION = {
     'DSPMQVER' : '%s/dspmqver',
     'ENDMQM' : '%s/endmqm',
     'DLTMQM' : '%s/dltmqm',
-    'SETMQAUT' : '%s/SETMQAUT',
-    'DSPMQAUT' : '%s/DSPMQAUT'
+    'SETMQAUT' : '%s/setmqaut',
+    'DSPMQAUT' : '%s/dspmqaut'
 }
 
 # ================================================================================
