@@ -646,7 +646,7 @@ def validate_binaries():
     for binary in IMPORTANT_BINARIES_LOCATION:
         binary_location = IMPORTANT_BINARIES_LOCATION[binary] % binary_path
         if not os.path.exists(binary_location):
-            module.fail_json(msg = "Missing mq binary : %s, the module may fail"\
+            module.fail_json(msg = "Missing mq binary : %s, the module will fail, validate your 'binary_path' argument to make sure it specifies your MQ installation" \
                 % binary_location)
         else:
             IMPORTANT_BINARIES_LOCATION[binary] = binary_location
