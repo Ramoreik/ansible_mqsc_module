@@ -53,13 +53,13 @@ binary_path = ""
 
 MODULE_TEMP_FOLDER = os.path.join(os.path.sep ,'tmp', 'mqsc_ansible_temp')
 IMPORTANT_BINARIES_LOCATION = {
-    'RUNMQSC' : '%s/runmqsc' % binary_path,
-    'CRTMQM' : '%s/crtmqm' % binary_path,
-    'STRMQM' : '%s/strmqm' % binary_path,
-    'DSPMQ' : '%s/dspmq' % binary_path,
-    'DSPMQVER' : '%s/dspmqver' % binary_path,
-    'ENDMQM' : '%s/endmqm' % binary_path,
-    'DLTMQM' : '%s/dltmqm' % binary_path
+    'RUNMQSC' : '%s/runmqsc',
+    'CRTMQM' : '%s/crtmqm',
+    'STRMQM' : '%s/strmqm',
+    'DSPMQ' : '%s/dspmq',
+    'DSPMQVER' : '%s/dspmqver',
+    'ENDMQM' : '%s/endmqm',
+    'DLTMQM' : '%s/dltmqm' 
 }
 
 # ================================================================================
