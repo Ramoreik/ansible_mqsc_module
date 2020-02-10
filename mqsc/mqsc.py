@@ -446,6 +446,18 @@ class Channel():
     ]
 
     VALID_ATTRIBUTES = {
+        'SVRCONN': [
+            'CERTLABL', 'CHLTYPE', 'CMDSCOPE',
+            'COMPHDR', 'COMPMSG', 'DEFCDISP',
+            'DESCR', 'DISCINT', 'HBINT',
+            'KAINT', 'LIKE', 'MAXINSTC',
+            'MAXMSGL', 'MCAUSER', 'MONCHL',
+            'PUTAUT', 'QSGDISP', 'RSCVDATA',
+            'RCVEXIT', 'REPLACE', 'SCYDATA',
+            'SCYEXIT', 'SENDDATA', 'SENDEXIT',
+            'SHARECNV', 'SSLCAUTH', 'SSLCIPH',
+            'SSLPEER', 'TPNAME', 'TRPTYPE'
+        ],
         'SDR': [
             'BATCHHB', 'BATCHINT', 'BATCHLIM',
             'BATCHSZ', 'CERTLABL', 'CHLTYPE',
