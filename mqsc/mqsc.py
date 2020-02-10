@@ -59,7 +59,9 @@ IMPORTANT_BINARIES_LOCATION = {
     'DSPMQ' : '%s/dspmq',
     'DSPMQVER' : '%s/dspmqver',
     'ENDMQM' : '%s/endmqm',
-    'DLTMQM' : '%s/dltmqm' 
+    'DLTMQM' : '%s/dltmqm',
+    'SETMQAUT' : '%s/SETMQAUT',
+    'DSPMQAUT' : '%s/DSPMQAUT'
 }
 
 # ================================================================================
@@ -70,6 +72,7 @@ class QMGR():
     DSPMQ_REGEX = r'QMNAME\(([A-Za-z0-9\.]*)\) *STATUS\(([A-Za-z]*)\)'
     DISPLAY_QUEUE_REGEX = r' *QUEUE\(([A-Z\_\.0-9]*)\) *[\n]?TYPE\(([A-Z]*)\)'
     DISPLAY_CHANNEL_REGEX = r' *CHANNEL\(([A-Z\_\.0-9]*)\) *[\n]?CHLTYPE\(([A-Z]*)\)'
+    DISPLAY_LISTENER_REGEX = r' *LISTENER\(([A-Z\_\.0-9]*\)'
     ATTRIBUTES_REGEX = r'   ([A-Z]*)\(([A-Z_\-\.[0-9\\ ]*)\)'
     #TODO: Add channels
     #TODO: Add altering queues and channels (this will give true idempotence)
@@ -77,12 +80,15 @@ class QMGR():
     #TODO: Add a temporary folder for debugging purposes
     #TODO: Add multiple ways of interacting with mqsc
 
-    def __init__(self, name, queues=[], channels=[], state='present'):
+    def __init__(self, name, queues=[], channels=[], listeners=[], permissions=[], state='present',):
         self.state = state
         self.name = name
         self.commands_pending = []
         self.existing_queues = []
         self.existing_channels = []
+        self.existing_listeners = []
+        self.listeners = listeners
+        self.permissions = permissions
         self.queues = queues
         self.channels = channels
         self.mqsc_cmds = []
@@ -168,6 +174,65 @@ class QMGR():
         cmd = shlex.split("%s %s" % (IMPORTANT_BINARIES_LOCATION['DLTMQM'], self.name))
         output = execute_command(cmd)
         print_command_output(output)
+
+    def handle_listeners(self):
+        for listener in self.listeners:
+            existing_listener = self.listener_exists(listener)
+            if listener["state"] == "present":
+                if existing_listener:
+                    print("WIP")
+                else:
+                    self.create_listener(listener)
+            if listener["state"] == "absent":
+                if existing_listener is not None:
+                    self.delete_listener(listener)
+
+    def delete_listener(self, listener_config):
+        listener = Listener(listener_config['name'], listener_config['trptype'], listener_config['port'])
+        output_file = os.path.join(MODULE_TEMP_FOLDER, '%s_delete_listener.out' % listener_config['name'])
+        self.run_isolated_mqsc_cmd(output_file, listener.generate_delete_cmd())
+    
+    def create_listener(self, listener_config):
+        listener = Listener(listener_config['name'], listener_config['trptype'], listener_config['port'])
+        output_file = os.path.join(MODULE_TEMP_FOLDER, '%s_create_listener.out' % listener_config['name'])
+        self.run_isolated_mqsc_cmd(output_file, listener.generate_define_cmd())
+
+    def retrieve_existing_listeners(self):
+        cmd = "DISPLAY LISTENER(*)"
+        listeners = self.run_mqsc_cmd_stdout(cmd)        
+        matches = []
+        for line in listeners.split('\n'):
+            match = re.match(self.DISPLAY_LISTENER_REGEX, line)
+            if match:
+                matches.append(list(match.groups()))
+        for match in matches:
+            queue = {
+                "name": match[0]
+            }
+            self.existing_listeners.append(queue)
+
+    def parse_existing_listeners(self):
+        listeners = []
+        for listener in self.existing_listeners:
+            cmd = "DISPLAY LISTENER(%s)" % listener['name']
+            stdout = self.run_mqsc_cmd_stdout(cmd)
+            stdout = stdout.replace('\n', '')
+            matches = re.findall(self.ATTRIBUTES_REGEX, stdout)
+            defined_listener = {
+                "name": listener['name'],
+                "opts": {}
+            }
+            for match in matches:
+                defined_listener["opts"][match[0]] = match[1]
+            listeners.append(defined_listener)
+        self.existing_listeners = listeners
+
+    def listener_exists(self, listener):
+        seeked_listener = None
+        for existing_listener in self.existing_listeners:
+            if existing_listener['name'] == listener['name']:
+                seeked_listener = existing_listener
+        return seeked_listener
 
     def handle_queues(self):
         for queue in self.queues:
@@ -616,6 +681,26 @@ class Channel():
                 if option in self.VALID_ATTRIBUTES[self.type]:
                     self.handle_option(option, self.options[option])
 
+#Handle listeners WIP
+class Listener():
+    def __init__(self, name, trptype, port):
+        self.name = name
+        self.type = trptype
+        self.port = port
+
+    def generate_define_cmd(self):
+        return 'DEFINE LISTENER(%s) TRPTYPE(%s) PORT(%s)' % \
+            (self.name, self.type, self.port)
+
+    def generate_alter_cmd(self):
+        print("alter listener")
+
+    def generate_delete_cmd(self):
+        return 'DELETE LISTENER(%s)' % self.name
+    
+    def generat_start_cmd(self):
+        return "START LISTENER(%s)" % self.name
+
 
 # ================================================================================
 # DEVNOTE:
@@ -673,6 +758,20 @@ def run_module():
         qmgrs=dict(required=True, type='list', elements='dict', options=dict(
             name=dict(required=True, type='str'),
             state=dict(type='str', default='present',choices=['present', 'absent']),
+            permissions=dict(type='list', elements='dict', options=dict(
+              object=dict(type='str', choices=['authinfo', 'channel', 'clntconn', 'comminfo', 'listener', \
+              'namelist', 'process', 'queue', 'qmgr', 'rqmname', 'service', 'topic']),
+              profile=dict(type='str'),
+              principal=dict(type='str'),
+              group=dict(type='str'),
+              authorizations=dict(type='list', elements='str')
+            )),
+            listeners=dict(type='list', elements='dict', options=dict(
+              name=dict(required=True, type='str'),
+              port=dict(default='1414', type='str'),
+              state=dict(default='present', choices=['present','absent'], type='str'),
+              trptype=dict(default='tcp', type='str')
+            )),
             channels=dict(type='list', elements='dict', options=dict(
               name=dict(required=True, type='str'),
               type=dict(required=True, type='str'),
@@ -847,7 +946,9 @@ def run_module():
         qmgr_state = config['state']
         qmgr_queues = config['queues']
         qmgr_channels = config['channels']
-        qmgr = QMGR(qmgr_name, qmgr_queues, qmgr_channels, qmgr_state)
+        qmgr_listeners = config['listeners']
+        qmgr = QMGR(name=qmgr_name, state=qmgr_state, queues=qmgr_queues,\
+            channels=qmgr_channels, listeners=qmgr_listeners)
         qmgrs.append(qmgr)
 
     # Iterate over QMGRS
@@ -859,6 +960,7 @@ def run_module():
                 qmgr.start()
                 qmgr.handle_queues()
                 qmgr.handle_channels()
+                qmgr.handle_listeners()
                 qmgr.display_queues()
                 qmgr.display_channels()
                 result['changed'] = True
@@ -875,6 +977,9 @@ def run_module():
                     qmgr.handle_channels()
                     qmgr.display_channels()
                     result['changed'] = True
+                if len(qmgr.listeners) > 0:
+                    qmgr.start()
+                    qmgr.handle_listeners()
                 module.exit_json(**result)
 
         if qmgr.state == "absent":
