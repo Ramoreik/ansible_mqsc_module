@@ -95,11 +95,21 @@ class QMGR():
         self.fetch_current_state()
 
     def handle_permissions(self):
+        cmd = ""
         for permission in self.permissions:
-            cmd = "%s -t %s -n %s -p %s %s" % \
-                (IMPORTANT_BINARIES_LOCATION['SETMQAUT'], \
-                    permission['object'], 
-                    permission['profile'], 
+            if permission['object'] == "qmgr":
+                cmd = "%s -m %s -t %s -p %s %s" % \
+                    (IMPORTANT_BINARIES_LOCATION['SETMQAUT'], \
+                        self.name,
+                        permission['object'], 
+                        permission['principal'],
+                        ' '.join(permission['authorizations']))
+            else:
+                cmd = "%s -m %s -t %s -n %s -p %s %s" % \
+                    (IMPORTANT_BINARIES_LOCATION['SETMQAUT'],
+                    self.name,
+                    permission['object'],
+                    permission['profile'],
                     permission['principal'],
                     ' '.join(permission['authorizations']))
             execute_command(cmd) 
