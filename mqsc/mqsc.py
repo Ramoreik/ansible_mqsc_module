@@ -49,16 +49,17 @@ import subprocess
 from ansible.module_utils.basic import AnsibleModule
 
 module = None
+binary_path = ""
 
 MODULE_TEMP_FOLDER = os.path.join(os.path.sep ,'tmp', 'mqsc_ansible_temp')
 IMPORTANT_BINARIES_LOCATION = {
-    'RUNMQSC' : '/usr/bin/runmqsc',
-    'CRTMQM' : '/usr/bin/crtmqm',
-    'STRMQM' : '/usr/bin/strmqm',
-    'DSPMQ' : '/usr/bin/dspmq',
-    'DSPMQVER' : '/usr/bin/dspmqver',
-    'ENDMQM' : '/usr/bin/endmqm',
-    'DLTMQM' : '/usr/bin/dltmqm'
+    'RUNMQSC' : '%s/runmqsc' % binary_path,
+    'CRTMQM' : '%s/crtmqm' % binary_path,
+    'STRMQM' : '%s/strmqm' % binary_path,
+    'DSPMQ' : '%s/dspmq' % binary_path,
+    'DSPMQVER' : '%s/dspmqver' % binary_path,
+    'ENDMQM' : '%s/endmqm' % binary_path,
+    'DLTMQM' : '%s/dltmqm' % binary_path
 }
 
 # ================================================================================
@@ -652,6 +653,7 @@ def run_module():
     # QUEUE MQSC COMMANDS :  https://www.ibm.com/support/knowledgecenter/SSFKSJ_9.1.0/com.ibm.mq.ref.adm.doc/q085690_.htm
     # define available arguments/parameters a user can pass to the module
     module_args = dict(
+        binary_path=dict(type='str', default='/opt/mqm/bin'),
         qmgr=dict(required=True, type='dict', options=dict(
             name=dict(required=True, type='str'),
             state=dict(type='str', default='present',choices=['present', 'absent']),
@@ -802,7 +804,7 @@ def run_module():
         ))
     )
 
-    global module
+    global module, binary_path
 
     module = AnsibleModule(
         argument_spec=module_args,
@@ -815,6 +817,11 @@ def run_module():
         message=''
     )
 
+    # Handle verification of binaries
+    binary_path = module.params['binary_path']
+    validate_binaries()
+
+    # Initialize Module
     create_temp_folder()
     qmgr_name = module.params['qmgr']['name']
     qmgr_state = module.params['qmgr']['state']
