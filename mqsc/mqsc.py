@@ -642,11 +642,14 @@ def execute_raw_command(cmd):
 # I plan to add arguments that could be passed to the module to specify where to find these binaries (normally /opt/mqm/bin)
 
 def validate_binaries():
+    global IMPORTANT_BINARIES_LOCATION
     for binary in IMPORTANT_BINARIES_LOCATION:
-        binary_location = IMPORTANT_BINARIES_LOCATION[binary]
+        binary_location = IMPORTANT_BINARIES_LOCATION[binary] % binary_path
         if not os.path.exists(binary_location):
-            module.warn("Missing mq binary : %s, the module may fail"\
+            module.fail_json(msg = "Missing mq binary : %s, the module may fail"\
                 % binary_location)
+        else:
+            IMPORTANT_BINARIES_LOCATION[binary] = binary_location
 
 
 def run_module():
