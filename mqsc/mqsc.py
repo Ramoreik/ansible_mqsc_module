@@ -196,6 +196,11 @@ class QMGR():
         listener = Listener(listener_config['name'], listener_config['trptype'], listener_config['port'])
         output_file = os.path.join(MODULE_TEMP_FOLDER, '%s_create_listener.out' % listener_config['name'])
         self.run_isolated_mqsc_cmd(output_file, listener.generate_define_cmd())
+    
+    def start_listerner(self, listener_config):
+        listener = Listener(listener_config['name'], listener_config['trptype'], listener_config['port'])
+        output_file = os.path.join(MODULE_TEMP_FOLDER, '%s_start_listener.out' % listener_config['name'])
+        self.run_isolated_mqsc_cmd(output_file, listener.generate_start_cmd())
 
     def retrieve_existing_listeners(self):
         cmd = "DISPLAY LISTENER(*)"
@@ -698,7 +703,7 @@ class Listener():
     def generate_delete_cmd(self):
         return 'DELETE LISTENER(%s)' % self.name
     
-    def generat_start_cmd(self):
+    def generate_start_cmd(self):
         return "START LISTENER(%s)" % self.name
 
 
