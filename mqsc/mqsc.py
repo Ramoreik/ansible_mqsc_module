@@ -616,7 +616,6 @@ class Channel():
                 if option in self.VALID_ATTRIBUTES[self.type]:
                     self.handle_option(option, self.options[option])
 
-class Listener():
 
 # ================================================================================
 # DEVNOTE:
