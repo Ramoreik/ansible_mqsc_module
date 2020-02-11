@@ -1,0 +1,39 @@
+---
+    - name: "This is a playbook to test MQSC module"
+      hosts: all
+      become: yes
+      become_user: mqm
+      gather_facts: no
+      tasks:
+        - name: "Deploy MQ config"
+          mqsc:
+            qmgrs: 
+              - name: TESTQ.1
+                state: present
+                permissions:
+                  - object: qmgr
+                    profile: 'TESTQ.1'
+                    principal: 'test_mq'
+                    authorizations:
+                      - '+connect'
+                  - object: queue
+                    profile: QTEST
+                    principal: 'test_mq'
+                    authorizations:
+                      - '+get'
+                      - '+put'
+                listeners:
+                  - name: 'LISTEN.1'
+                    trptype: 'TCP'
+                channels:
+                  - name: "CHANNELTEST"
+                    type: "SVRCONN"
+                    opts:
+                      MCAUSER: test_mq
+                      DESCR: "This is a test channel SRVCONN"
+                queues: 
+                  - name: "QTEST"
+                    type: QLOCAL
+                    opts:
+                      DESCR: "This is a test Q"
+    
